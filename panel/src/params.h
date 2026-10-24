@@ -5,15 +5,17 @@
 #include <string>
 #include <vector>
 
-/** スライダー 1 本ぶんの定義。名前と説明は日本語と英語の両方を持つ。 */
+/** スライダー 1 本ぶんの定義。名前と説明は日本語・英語・中国語を持つ。 */
 struct ParamSpec {
     const char* key;      ///< params.conf のキー
     const char* label;    ///< パネルに出す名前（日本語）
     const char* labelEn;  ///< 同じ（英語）
+    const char* labelZh;  ///< 同じ（中国語）
     double min, max, step;
     int decimals;         ///< 表示の小数点以下の桁数
     const char* desc;     ///< パネルの説明（1 行、日本語）
     const char* descEn;   ///< 同じ（英語）
+    const char* descZh;   ///< 同じ（中国語）
     bool beta = false;    ///< true なら実験的タブに出す（効果の確認が十分でない機能）
 };
 
@@ -24,6 +26,7 @@ const std::vector<ParamSpec>& paramSpecs();
 struct Preset {
     const char* name;    ///< 日本語の名前
     const char* nameEn;  ///< 英語の名前
+    const char* nameZh;  ///< 中国語の名前
     std::map<std::string, double> values;
     bool beta = false;   ///< true なら実験的タブに出す
 };

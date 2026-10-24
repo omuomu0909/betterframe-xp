@@ -64,6 +64,19 @@ EOF
 rm -f "$layer_dir/betterframe-xp-vrlink.json"
 
 [ -f "$conf_dir/params.conf" ] || install -m644 "$src_dir/contrib/params.conf" "$conf_dir/params.conf"
+# An older params.conf is missing the keys added since (e.g. the colour grade). Append just those
+# keys with the shipped defaults; values the user already set are never touched.
+if [ -f "$conf_dir/params.conf" ]; then
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key=$(printf '%s' "${line%%=*}" | tr -d ' \t')
+    [ -n "$key" ] || continue
+    grep -q "^[[:space:]]*$key[[:space:]]*=" "$conf_dir/params.conf" 2>/dev/null || {
+      [ -z "$(tail -c 1 "$conf_dir/params.conf" 2>/dev/null)" ] || printf '\n' >> "$conf_dir/params.conf"
+      printf '%s\n' "$line" >> "$conf_dir/params.conf"
+    }
+  done < "$src_dir/contrib/params.conf"
+fi
 
 # Dashboard panel: installed AND enabled, so it shows up in the SteamVR dashboard from the next start.
 # `betterframectl panel-off` is the only way to turn it off; re-running this script enables it again.

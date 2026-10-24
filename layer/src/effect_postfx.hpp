@@ -31,6 +31,11 @@ namespace vkBasalt
         float casCross        = 1.0f;  // 1 = CAS cross taps only, 0 = full 3x3
         float casLuma         = 1.0f;  // 1 = CAS on luma, 0 = per colour channel
         float cornerSkip      = 1.15f; // corners beyond this eye radius are left alone, 0 = off
+        float contrast        = 1.0f;  // 1 = unchanged (pivot 0.5)
+        float saturation      = 1.0f;  // 1 = unchanged, 0 = greyscale
+        float gamma           = 1.0f;  // 1 = unchanged, > 1 brightens mid-tones
+        float temperature     = 1.0f;  // 1 = unchanged, > 1 warmer (overall luma preserved)
+        float brightness      = 1.0f;  // 1 = unchanged
         float frameSeed       = 0.0f; // set by the layer every frame, not from the file
     };
 
@@ -51,7 +56,8 @@ namespace vkBasalt
         void applyEffect(uint32_t imageIndex, VkCommandBuffer commandBuffer) override;
         void updateEffect() override;
         // True when the values updateEffect() just wrote leave the picture unchanged (sharpen, deband and grain
-        // all zero): the pass would only copy, so the layer may submit a plain image copy instead.
+        // all zero and the colour grade neutral): the pass would only copy, so the layer may submit a plain image
+        // copy instead.
         bool isIdle() const override { return idle; }
 
     private:

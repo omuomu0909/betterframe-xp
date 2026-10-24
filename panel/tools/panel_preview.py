@@ -123,21 +123,24 @@ def as_string(arg):
     return "".join(unescape(p) for p in parts)
 
 
-def resolve_language(src, english):
-    """tr("日本語", "English") と gEnglish ? A : B を、選んだ言語のほうに置き換える（パネルが実行時にやることの写し）。"""
+def resolve_language(src, lang):
+    """tr("日本語", "English", "中文") と gChinese ? A : (gEnglish ? B : C) を、選んだ言語のほうに置き換える（パネルが実行時にやることの写し）。"""
+    index = {"ja": 0, "en": 1, "zh": 2}[lang]
     out, pos = [], 0
     for m in re.finditer(r"\btr\(", src):
         if m.start() < pos:
             continue  # 前の tr(...) の中
         end = match_close(src, m.end() - 1, "(", ")")
         args = split_args(src[m.end():end])
-        if len(args) == 2 and all(a.startswith('"') for a in args):
+        if len(args) == 3 and all(a.startswith('"') for a in args):
             out.append(src[pos:m.start()])
-            out.append(args[1] if english else args[0])
+            out.append(args[index])
             pos = end + 1
     out.append(src[pos:])
     text = "".join(out)
-    return re.sub(r"gEnglish\s*\?\s*(\w+)\s*:\s*(\w+)", lambda m: m.group(1) if english else m.group(2), text)
+    text = re.sub(r"gChinese\s*\?\s*(\w+)\s*:\s*\(\s*gEnglish\s*\?\s*(\w+)\s*:\s*(\w+)\s*\)",
+                  lambda m: m.group(1) if index == 2 else (m.group(2) if index == 1 else m.group(3)), text)
+    return re.sub(r"gEnglish\s*\?\s*(\w+)\s*:\s*(\w+)", lambda m: m.group(1) if index == 1 else m.group(2), text)
 
 
 # ---- 文字幅の見積もり ----
@@ -182,12 +185,13 @@ def read_specs(text):
     body = body[:body.index("return specs;")]
     specs = []
     lit = r"((?:\"(?:\\.|[^\"\\])*\"\s*)+)"
-    for m in re.finditer(r"\{\s*\"(\w+)\",\s*\"([^\"]*)\",\s*\"([^\"]*)\",\s*([\d.\-]+),\s*([\d.\-]+),\s*([\d.\-]+),\s*(\d+),\s*"
-                         + lit + r",\s*" + lit + r"(?:,\s*(true|false))?\s*\}", body):
+    for m in re.finditer(r"\{\s*\"(\w+)\",\s*\"([^\"]*)\",\s*\"([^\"]*)\",\s*\"([^\"]*)\",\s*([\d.\-]+),\s*([\d.\-]+),\s*([\d.\-]+),\s*(\d+),\s*"
+                         + lit + r",\s*" + lit + r",\s*" + lit + r"(?:,\s*(true|false))?\s*\}", body):
         join = lambda g: "".join(unescape(p) for p in STR.findall(g))
-        specs.append(dict(key=m.group(1), label=m.group(2), labelEn=m.group(3), min=float(m.group(4)),
-                          max=float(m.group(5)), step=float(m.group(6)), decimals=int(m.group(7)),
-                          desc=join(m.group(8)), descEn=join(m.group(9)), beta=m.group(10) == "true"))
+        specs.append(dict(key=m.group(1), label=m.group(2), labelEn=m.group(3), labelZh=m.group(4), min=float(m.group(5)),
+                          max=float(m.group(6)), step=float(m.group(7)), decimals=int(m.group(8)),
+                          desc=join(m.group(9)), descEn=join(m.group(10)), descZh=join(m.group(11)),
+                          beta=m.group(12) == "true"))
     return specs
 
 
@@ -196,9 +200,22 @@ def read_presets(text):
     body = text[text.index("presets()"):]
     body = body[:body.index("return list;")]
     presets = []
-    for m in re.finditer(r'\{\s*"([^"]+)",\s*"([^"]+)",\s*\{((?:\{[^{}]*\},?\s*)+)\}\s*(?:,\s*(true|false))?\s*\}', body):
-        presets.append(dict(name=m.group(1), nameEn=m.group(2), beta=m.group(4) == "true"))
+    for m in re.finditer(r'\{\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*\{((?:\{[^{}]*\},?\s*)+)\}\s*(?:,\s*(true|false))?\s*\}', body):
+        presets.append(dict(name=m.group(1), nameEn=m.group(2), nameZh=m.group(3), beta=m.group(5) == "true"))
     return presets
+
+
+def read_color_presets(src):
+    """panel_main.cpp の kColorPresets（日本語・英語・中国語の名前）を読む。"""
+    block = re.search(r"kColorPresets\[\]\s*=\s*\{(.*?)\n\};", src, flags=re.S)
+    if not block:
+        return []
+    rows = []
+    for line in block.group(1).splitlines():
+        names = [unescape(s) for s in STR.findall(line)]
+        if len(names) >= 3:
+            rows.append(names[:3])
+    return rows
 
 
 def read_conf(path):
@@ -217,14 +234,15 @@ def read_conf(path):
 # ---- 描画要素の組み立て ----
 
 class Scene:
-    def __init__(self, consts, colors, specs, presets, values, gaze, tips, english=False, restart=False, update_sample="available"):
+    def __init__(self, consts, colors, specs, presets, values, gaze, tips, lang="ja", restart=False, update_sample="available"):
         self.consts, self.colors, self.specs, self.presets = consts, colors, specs, presets
         self.values, self.gaze, self.tips = values, gaze, tips
-        self.english = english
+        self.lang = lang
         self.restart = restart              # 「SteamVR の再起動が必要」の帯を出す
         self.update_sample = update_sample  # 更新タブの見本の状態
         self.items = []   # SVG 断片
         self.texts = []   # (x0, x1, y0, y1, text) 重なり検査用
+        self.color_presets = []  # [[日本語, 英語, 中国語]] 色調整タブのショートカット
 
     def color(self, name):
         r, g, b = self.colors[name]
@@ -252,8 +270,8 @@ class Scene:
         x0, w = c["kSliderX"], c["kSliderW"]
         v = self.values.get(spec["key"], spec["min"])
         t = min(max((v - spec["min"]) / (spec["max"] - spec["min"]), 0), 1)
-        self.text(indent, y + 8, spec["labelEn" if self.english else "label"], 22, "kText")
-        self.text(indent, y + 36, spec["descEn" if self.english else "desc"], 17, "kSub")
+        self.text(indent, y + 8, spec[{"ja": "label", "en": "labelEn", "zh": "labelZh"}[self.lang]], 22, "kText")
+        self.text(indent, y + 36, spec[{"ja": "desc", "en": "descEn", "zh": "descZh"}[self.lang]], 17, "kSub")
         self.rect(x0, y - 4, w, 8, 4, self.color("kTrack"))
         self.rect(x0, y - 4, w * t, 8, 4, self.color("kAccent"))
         self.items.append(f'<circle cx="{x0 + w * t:.1f}" cy="{y}" r="12" fill="{self.color("kText")}"/>')
@@ -263,31 +281,40 @@ class Scene:
         for p in self.presets:
             if p["beta"] != beta:
                 continue
-            name = p["nameEn" if self.english else "name"]
+            name = p[{"ja": "name", "en": "nameEn", "zh": "nameZh"}[self.lang]]
             w = est_width(name, 22) + 40
             self.rect(x, y, w, 44, 10, self.color("kCard"))
             self.text(x + 20, y + 30, name, 22, "kText")
             x += w + 14
 
+    def color_presets_row(self, x, y):
+        """drawColorPresets の写し（色調整タブのショートカット）。"""
+        for names in self.color_presets:
+            name = names[{"ja": 0, "en": 1, "zh": 2}[self.lang]]
+            w = est_width(name, 22) + 48
+            self.rect(x, y, w, 44, 10, self.color("kCard"))
+            self.text(x + 24, y + 30, name, 22, "kText")
+            x += w + 18
+
     def update_status(self):
         """drawUpdateStatus の写し（更新タブの版・ボタン・進み）。状態は実機では確認の結果で決まるので、見本の状態で描く。"""
-        tr = (lambda ja, en: en if self.english else ja)
+        tr = (lambda ja, en, zh=None: (zh if zh is not None else en) if self.lang == "zh" else (en if self.lang == "en" else ja))
         st = self.update_sample
         cur = (ROOT / "VERSION").read_text(encoding="utf-8").strip()  # 配る版。版を上げても見本が古くならない
         major, minor, _patch = (int(n) for n in cur.split("."))
         latest = f"{major}.{minor + 1}.0"  # 「新しい版がある」の見本用
-        self.text(40, 232, tr("いまの版", "Installed"), 21, "kSub")
+        self.text(40, 232, tr("いまの版", "Installed", "当前版本"), 21, "kSub")
         self.text(200, 232, cur, 26, "kText", bold=True)
-        self.text(40, 274, tr("最新の版", "Latest"), 21, "kSub")
+        self.text(40, 274, tr("最新の版", "Latest", "最新版本"), 21, "kSub")
         available = st in ("available", "running", "done", "failed")
         if st == "error":
-            self.text(200, 274, tr("GitHub に繋がらない", "Cannot reach GitHub"), 21, "kWarn")
+            self.text(200, 274, tr("GitHub に繋がらない", "Cannot reach GitHub", "无法连接 GitHub"), 21, "kWarn")
         elif available:
             self.text(200, 274, latest, 26, "kAccent", bold=True)
-            self.text(200 + est_width(latest, 26) + 16, 274, tr("新しい版がある", "A new version is available"), 21, "kWarn")
+            self.text(200 + est_width(latest, 26) + 16, 274, tr("新しい版がある", "A new version is available", "有新版本"), 21, "kWarn")
         else:
             self.text(200, 274, cur, 26, "kText", bold=True)
-            self.text(200 + est_width(cur, 26) + 16, 274, tr("最新です", "Up to date"), 21, "kSub")
+            self.text(200 + est_width(cur, 26) + 16, 274, tr("最新です", "Up to date", "已是最新"), 21, "kSub")
         running = st == "running"
 
         def button(x, label, primary, enabled):
@@ -297,36 +324,38 @@ class Scene:
             self.text(x + 24, 336, label, 22, "kBg" if on else ("kText" if enabled else "kTrack"))
             return w
 
-        x = 40 + button(40, tr("今すぐ確認", "Check now"), False, not running) + 14
+        x = 40 + button(40, tr("今すぐ確認", "Check now", "立即检查"), False, not running) + 14
         if available:
-            button(x, tr("この版に更新する", "Update to this version"), True, not running)
-            self.text(40, 384, tr("リリースのページ: ", "Release page: ") + "https://github.com/omuomu0909/betterframe-xp/releases/tag/v" + latest, 17, "kSub")
+            button(x, tr("この版に更新する", "Update to this version", "更新到此版本"), True, not running)
+            self.text(40, 384, tr("リリースのページ: ", "Release page: ", "发行版页面: ") + "https://github.com/omuomu0909/betterframe-xp/releases/tag/v" + latest, 17, "kSub")
         if running:
-            self.text(40, 436, tr("ビルドして入れ替え中（数分かかる）", "Building and installing (takes a few minutes)") + "…", 22, "kAccent", bold=True)
-            self.text(40, 466, tr("この画面を閉じても続く", "It keeps going if you close this screen"), 19, "kSub")
+            self.text(40, 436, tr("ビルドして入れ替え中（数分かかる）", "Building and installing (takes a few minutes)", "编译并替换中（需数分钟）") + "…", 22, "kAccent", bold=True)
+            self.text(40, 466, tr("この画面を閉じても続く", "It keeps going if you close this screen", "关闭此界面后仍会继续"), 19, "kSub")
         elif st == "done":
-            self.text(40, 436, tr("更新した: ", "Updated: ") + latest, 22, "kAccent", bold=True)
+            self.text(40, 436, tr("更新した: ", "Updated: ", "已更新: ") + latest, 22, "kAccent", bold=True)
             self.text(40, 466, tr("SteamVR を再起動すると、新しい版になる（自動では再起動しない）",
-                                  "Restart SteamVR to run the new version (it is not restarted for you)"), 19, "kWarn")
+                                  "Restart SteamVR to run the new version (it is not restarted for you)",
+                                  "重启 SteamVR 后就会换成新版本（不会自动重启）"), 19, "kWarn")
         elif st == "failed":
-            self.text(40, 436, tr("検証に失敗した（ファイルが壊れている）。何も入れていない", "Checksum mismatch (corrupt download). Nothing was installed"), 22, "kWarn", bold=True)
-            self.text(40, 466, tr("詳しいログ: ~/.cache/betterframe-xp/update.log", "Details: ~/.cache/betterframe-xp/update.log"), 19, "kSub")
+            self.text(40, 436, tr("検証に失敗した（ファイルが壊れている）。何も入れていない", "Checksum mismatch (corrupt download). Nothing was installed", "校验失败（文件损坏）。没有安装任何内容"), 22, "kWarn", bold=True)
+            self.text(40, 466, tr("詳しいログ: ~/.cache/betterframe-xp/update.log", "Details: ~/.cache/betterframe-xp/update.log", "详细日志: ~/.cache/betterframe-xp/update.log"), 19, "kSub")
 
     def language_buttons(self):
-        """drawLanguage の写し（右上の 日本語 / English）。クリックで言語を切り替える。"""
-        names, size = ("日本語", "English"), 19
+        """drawLanguage の写し（右上の 日本語 / English / 中文）。クリックで言語を切り替える。"""
+        names, size = ("日本語", "English", "中文"), 19
         widths = [est_width(n, size) + 36 for n in names]
         x = self.consts["kWidth"] - 40 - sum(widths)
+        langs = ("ja", "en", "zh")
         for i, n in enumerate(names):
-            on = (i == 1) == self.english
-            self.items.append(f'<g class="lang" data-lang="{"en" if i else "ja"}" style="cursor:pointer">')
+            on = langs[i] == self.lang
+            self.items.append(f'<g class="lang" data-lang="{langs[i]}" style="cursor:pointer">')
             self.rect(x, 4, widths[i], 28, 10, self.color("kAccent" if on else "kCard"))
             self.text(x + 18, 24, n, size, "kBg" if on else "kText")
             self.items.append("</g>")
             x += widths[i]
 
 
-CALL = re.compile(r"\b(pen\.text|pen\.roundedRect|heading|toggleWithNote|toggle|drawSliderByKey|drawSliders|drawPresets|subBar|gazeItem|drawCaution|drawRestartBanner|drawUpdateStatus)\s*\(")
+CALL = re.compile(r"\b(pen\.text|pen\.roundedRect|heading|toggleWithNote|toggle|drawSliderByKey|drawSliders|drawPresets|drawColorPresets|subBar|gazeItem|drawCaution|drawRestartBanner|drawUpdateStatus)\s*\(")
 
 
 def emit_function(scene, src, name, env_base):
@@ -385,6 +414,8 @@ def emit_function(scene, src, name, env_base):
                         row += 1
             elif fn == "drawPresets":
                 scene.presets_row(args[1] == "true", num(args[2]), num(args[3]))
+            elif fn == "drawColorPresets":
+                scene.color_presets_row(num(args[1]), num(args[2]))
             elif fn == "subBar":
                 scene.rect(52, num(args[1]), 3, num(args[2]) - num(args[1]), 0, scene.color("kTrack"))
             elif fn == "gazeItem":
@@ -428,9 +459,10 @@ def read_tips(src):
     return tips
 
 
-def build_tab(src, consts, colors, specs, presets, values, gaze, tips, tab_index, tab_names, tab_funcs, english=False,
+def build_tab(src, consts, colors, specs, presets, values, gaze, tips, tab_index, tab_names, tab_funcs, lang="ja",
               restart=False, update_sample="available"):
-    s = Scene(consts, colors, specs, presets, values, gaze, tips, english, restart, update_sample)
+    s = Scene(consts, colors, specs, presets, values, gaze, tips, lang, restart, update_sample)
+    s.color_presets = read_color_presets(src)
     W, H = int(consts["kWidth"]), int(consts["kHeight"])
     s.rect(0, 0, W, H, 0, s.color("kBg"))
     emit_function(s, src, "drawUi", consts)         # ヘッダー（タイトル・有効・左右比較）
@@ -450,8 +482,9 @@ def build_tab(src, consts, colors, specs, presets, values, gaze, tips, tab_index
     emit_function(s, src, tab_funcs[tab_index], consts)
     y = H - 132                                     # 負荷カード（drawLoad の形だけ。値は実機で入る）
     s.rect(24, y, W - 48, 116, 14, s.color("kCard"))
-    s.text(44, y + 34, "Load" if english else "負荷", 22, "kSub", bold=True)
-    s.text(120, y + 34, "(on the device, measured values appear here)" if english else "（ここに、実機では計測値が入る）", 22, "kSub")
+    s.text(44, y + 34, {"ja": "負荷", "en": "Load", "zh": "负载"}[lang], 22, "kSub", bold=True)
+    s.text(120, y + 34, {"ja": "（ここに、実機では計測値が入る）", "en": "(on the device, measured values appear here)",
+                              "zh": "（这里在真机上会填入测量值）"}[lang], 22, "kSub")
     return s, W, H
 
 
@@ -550,16 +583,15 @@ def take_shots(page_path, shots, outdir, browser):
 def build_html(a, raw, specs, presets, values, funcs, start, restart, sample, gaze):
     """全タブ・両言語の SVG を 1 つの HTML にする。(HTML, 警告, タブ名) を返す。"""
     svgs, warns, names = [], [], {}
-    for lang in ("ja", "en"):
-        english = lang == "en"
-        src = resolve_language(raw, english)  # tr("日本語", "English") を選んだ言語に置き換えたソース
+    for lang in ("ja", "en", "zh"):
+        src = resolve_language(raw, lang)  # tr("日本語", "English", "中文") を選んだ言語に置き換えたソース
         consts, colors, tips = read_consts(src), read_colors(src), read_tips(src)
-        array = "kTabNamesEn" if english else "kTabNames"
+        array = {"ja": "kTabNames", "en": "kTabNamesEn", "zh": "kTabNamesZh"}[lang]
         names[lang] = [unescape(s) for s in STR.findall(re.search(array + r"\[\]\s*=\s*\{([^}]*)\}", raw).group(1))]
         if len(funcs) != len(names[lang]):
             sys.exit(f"タブ名 {len(names[lang])} 個と enum {len(funcs)} 個が合わない")
         for i in range(len(funcs)):
-            scene, W, H = build_tab(src, consts, colors, specs, presets, values, gaze, tips, i, names[lang], funcs, english,
+            scene, W, H = build_tab(src, consts, colors, specs, presets, values, gaze, tips, i, names[lang], funcs, lang,
                                     restart, sample)
             warns += check(scene, W, f"{lang} {names[lang][i]}")
             svgs.append(f'<svg data-lang="{lang}" data-tab="{i}" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
@@ -581,7 +613,7 @@ const svgs=[...document.querySelectorAll('svg')];
 let lang={json.dumps(start)},tab=0;
 function show(){{svgs.forEach(s=>s.style.display=(s.dataset.lang===lang&&+s.dataset.tab===tab)?'block':'none');}}
 // URL の #1 や #1-en で、最初に開くタブと言語を選べる。末尾に -shot を付けると説明を消す（画像を撮る用）
-const m=location.hash.slice(1).match(/^(\\d+)?(?:-?(ja|en))?(-shot)?$/);
+const m=location.hash.slice(1).match(/^(\\d+)?(?:-?(ja|en|zh))?(-shot)?$/);
 if(m){{if(m[1]&&+m[1]<svgs.length/2)tab=+m[1];if(m[2])lang=m[2];if(m[3])document.body.classList.add('shot');}}
 svgs.forEach(s=>s.addEventListener('click',e=>{{
   const t=e.target.closest('.tab'),l=e.target.closest('.lang');
@@ -597,7 +629,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--params", default=str(ROOT / "contrib" / "params.conf"), help="値を読む params.conf")
     ap.add_argument("--out", default=str(ROOT / "tmp" / "panel-preview.html"), help="出力先（tmp/ は git 管理外）")
-    ap.add_argument("--lang", choices=("ja", "en"), default=None,
+    ap.add_argument("--lang", choices=("ja", "en", "zh"), default=None,
                     help="最初に開く言語（既定は params.conf の uiLanguage）。ブラウザ上のボタンでも切り替わる")
     ap.add_argument("--gaze-reproject", action="store_true", help="奥行きの補正スイッチを ON で描く")
     ap.add_argument("--gaze-eye-to-head-off", action="store_true", help="目の位置の補正スイッチを OFF で描く")
@@ -616,7 +648,7 @@ def main():
     if not specs:
         sys.exit("params.cpp からスライダーを読めなかった")
     values = read_conf(a.params)
-    start = a.lang or ("en" if values.get("uiLanguage", 0) >= 0.5 else "ja")
+    start = a.lang or {0: "ja", 1: "en", 2: "zh"}.get(int(values.get("uiLanguage", 0)), "ja")
     gaze = {"known": True, "reproject": a.gaze_reproject, "eyeToHead": not a.gaze_eye_to_head_off}
     enum = re.search(r"enum class Tab\s*\{([^}]*)\}", raw).group(1)
     funcs = ["draw" + e.strip() for e in enum.split(",") if e.strip()]
@@ -637,12 +669,12 @@ def main():
         # 通常の画像（再起動の帯なし・更新タブは --update-sample の見本）
         normal = out.with_name(out.stem + "-shots.html")
         normal.write_text(build_html(a, raw, specs, presets, values, funcs, start, False, a.update_sample, gaze)[0], encoding="utf-8")
-        shots = [(f"panel-{slug}-{lang}.png", i, lang) for lang in ("ja", "en") for i, slug in enumerate(slugs)]
+        shots = [(f"panel-{slug}-{lang}.png", i, lang) for lang in ("ja", "en", "zh") for i, slug in enumerate(slugs)]
         ok = take_shots(normal, shots, outdir, browser)
         # 再起動の帯つき（画質タブ）
         banner = out.with_name(out.stem + "-shots-restart.html")
         banner.write_text(build_html(a, raw, specs, presets, values, funcs, start, True, a.update_sample, gaze)[0], encoding="utf-8")
-        ok = take_shots(banner, [(f"panel-restart-{lang}.png", 0, lang) for lang in ("ja", "en")], outdir, browser) and ok
+        ok = take_shots(banner, [(f"panel-restart-{lang}.png", 0, lang) for lang in ("ja", "en", "zh")], outdir, browser) and ok
         print("画像を書いた" if ok else "警告: 撮れなかった画像がある")
     if a.open:
         open_in_orca(out, f"{a.tab}-{start}")

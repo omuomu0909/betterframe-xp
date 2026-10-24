@@ -34,6 +34,22 @@ namespace vkBasalt
             if (home && *home) return std::string(home) + "/.config/betterframe-xp/params.conf";
             return {};
         }
+
+        // The colour grade is a no-op when every value is 1.0; the layer then skips the pass entirely.
+        bool colorNeutral(const PostFxParams& p)
+        {
+            return p.contrast == 1.0f && p.saturation == 1.0f && p.gamma == 1.0f
+                && p.temperature == 1.0f && p.brightness == 1.0f;
+        }
+
+        void resetColor(PostFxParams& p)
+        {
+            p.contrast    = 1.0f;
+            p.saturation  = 1.0f;
+            p.gamma       = 1.0f;
+            p.temperature = 1.0f;
+            p.brightness  = 1.0f;
+        }
     } // namespace
 
     bool readPostFxParams(const std::string& path, PostFxParams& params, bool* streamOnly)
@@ -64,6 +80,11 @@ namespace vkBasalt
             {"casCross",        &next.casCross,        0.0f, 1.0f},
             {"casLuma",         &next.casLuma,         0.0f, 1.0f},
             {"cornerSkip",      &next.cornerSkip,      0.0f, 2.0f},
+            {"contrast",        &next.contrast,        0.5f, 1.5f},
+            {"saturation",      &next.saturation,      0.0f, 2.0f},
+            {"gamma",           &next.gamma,           0.5f, 2.5f},
+            {"temperature",     &next.temperature,     0.8f, 1.2f},
+            {"brightness",      &next.brightness,      0.5f, 1.5f},
         };
         std::string line;
         while (std::getline(input, line))
@@ -85,6 +106,7 @@ namespace vkBasalt
             next.sharpenAmount = 0.0f;
             next.debandAmount  = 0.0f;
             next.grainAmount   = 0.0f;
+            resetColor(next);
         }
         params = next;
         if (streamOnly) *streamOnly = stream >= 0.5f;
@@ -196,9 +218,11 @@ namespace vkBasalt
                 next.sharpenAmount = 0.0f;
                 next.debandAmount  = 0.0f;
                 next.grainAmount   = 0.0f;
+                resetColor(next);
             }
         }
-        idle = next.sharpenAmount <= 0.0f && next.debandAmount <= 0.0f && next.grainAmount <= 0.0f;
+        idle = next.sharpenAmount <= 0.0f && next.debandAmount <= 0.0f && next.grainAmount <= 0.0f
+            && colorNeutral(next);
         if (std::memcmp(&next, &written, sizeof(PostFxParams)) != 0)
         {
             written = next;

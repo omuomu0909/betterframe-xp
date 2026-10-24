@@ -1,6 +1,6 @@
 # BetterFrame XP
 
-English: [README.en.md](README.en.md)
+English: [README.en.md](README.en.md) / 中文: [README.zh.md](README.zh.md)
 
 Steam Frame で、PC から Steam Link で送られてくる映像に**シャープ（AMD CAS）を Frame 側で後掛け**する。無線で少しぼやけた映像をくっきりさせ、VRChat の草や葉が「泥のように」つぶれるのを目立たなくするための道具。
 
@@ -42,23 +42,23 @@ sh contrib/setup.sh
 
 PC 側の SteamVR で、エンコード前のシャープ（`useSharpening`）は**切っておく**。両方掛けると二重になる。
 
-必要なもの: Steam Frame（SteamOS、aarch64）。root 不要。ビルド道具は SteamOS 0.5.6 に最初から入っていた。ダッシュボードのパネルも一緒に入って有効になる（日本語フォント `noto-cjk` などが要る。足りなければ `setup.sh` が止まる。パネル不要なら `--no-panel`）。パネルは日本語が既定で、右上の「日本語 / English」で切り替えられる。
+必要なもの: Steam Frame（SteamOS、aarch64）。root 不要。ビルド道具は SteamOS 0.5.6 に最初から入っていた。ダッシュボードのパネルも一緒に入って有効になる（日本語フォント `noto-cjk` などが要る。足りなければ `setup.sh` が止まる。パネル不要なら `--no-panel`）。パネルは日本語が既定で、右上の「日本語 / English / 中文」で切り替えられる。
 
 ## 使い方
 
 パネルの見た目（`panel/tools/panel_preview.py --shots` で作った画像）:
 
-| 画質 | 更新 | 再起動の表示 |
-|---|---|---|
-| ![画質タブ](docs/images/panel-quality-ja.png) | ![更新タブ](docs/images/panel-update-ja.png) | ![再起動が必要](docs/images/panel-restart-ja.png) |
+| 画質 | 色調整 | 更新 | 再起動の表示 |
+|---|---|---|---|
+| ![画質タブ](docs/images/panel-quality-ja.png) | ![色調整タブ](docs/images/panel-color-ja.png) | ![更新タブ](docs/images/panel-update-ja.png) | ![再起動が必要](docs/images/panel-restart-ja.png) |
 
 画像は実機の画面ではなく、パネルの描き方を HTML に写した見本（数値は既定値、負荷の欄は実機で計測値が入る場所）。
 
 ### パネルの基本
 
-- ダッシュボードの「BetterFrame XP」パネルで、掛け具合を見ながら変える。タブは「画質 / 実験的 / SteamVR 設定 / 更新」。
+- ダッシュボードの「BetterFrame XP」パネルで、掛け具合を見ながら変える。タブは「画質 / 色調整 / 実験的 / SteamVR 設定 / 更新」。
 - 右上のスイッチ: 「有効」（シャープなど全体の ON/OFF）、「左右比較」（各目の中央に線を引く。左が素通し、右が処理後）、「PC の映像だけ」（ON 推奨。OFF だと Frame 単体のときも掛かる）。
-- 画質タブは「シャープ」「中心の重み」「プリセット」。実験的タブは「デバンド」「シャープの補助」「グレイン」。縦線の下の副設定は、その段落の量（シャープ量・デバンド量・グレイン量）が 0 のときは効かない。
+- 画質タブは「シャープ」「中心の重み」「プリセット」。色調整タブは「コントラスト / 彩度 / ガンマ / 色温度 / 明るさ」で、シャープのあとで最終画面の色を整える（1.0 で変化なし）。ショートカットは「ニュートラル / ビビッド / ソフト / アイケア」。実験的タブは「デバンド」「シャープの補助」「グレイン」。縦線の下の副設定は、その段落の量（シャープ量・デバンド量・グレイン量）が 0 のときは効かない。
 - 「SteamVR 設定」タブのスイッチだけが、Frame の SteamVR 自体の設定を書き換える。各スイッチの効果は、そのタブの Tips に書いてある。
 
 ### パネルを閉じる・もう一度出す

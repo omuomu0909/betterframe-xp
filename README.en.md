@@ -1,6 +1,6 @@
 # BetterFrame XP
 
-Japanese: [README.md](README.md)
+Japanese: [README.md](README.md) / Chinese: [README.zh.md](README.zh.md)
 
 On Steam Frame, this applies AMD CAS sharpening on the Frame side to the video that the PC sends over Steam Link. It makes the slightly blurry wireless video sharper, and makes the "smeared like mud" look of grass and leaves in VRChat a little less noticeable.
 
@@ -44,23 +44,23 @@ Then **restart SteamVR while you are not playing** (`setup.sh` does not restart 
 
 On the PC side, turn **off** sharpening before encoding (`useSharpening`) in SteamVR. Running both applies it twice.
 
-Requirements: Steam Frame (SteamOS, aarch64). Root is not needed. The build tools were already included in SteamOS 0.5.6. The dashboard panel is installed and enabled too. It needs a Japanese font (`noto-cjk` and similar); if that is missing, `setup.sh` stops. To skip the panel, use `--no-panel`. The panel is in Japanese by default; the "日本語 / English" buttons at its top right switch the language.
+Requirements: Steam Frame (SteamOS, aarch64). Root is not needed. The build tools were already included in SteamOS 0.5.6. The dashboard panel is installed and enabled too. It needs a Japanese font (`noto-cjk` and similar); if that is missing, `setup.sh` stops. To skip the panel, use `--no-panel`. The panel is in Japanese by default; the "日本語 / English / 中文" buttons at its top right switch the language.
 
 ## Usage
 
 Look of the panel (images made with `panel/tools/panel_preview.py --shots`):
 
-| Quality | Update | Restart notice |
-|---|---|---|
-| ![Quality tab](docs/images/panel-quality-ja.png) | ![Update tab](docs/images/panel-update-ja.png) | ![Restart needed](docs/images/panel-restart-ja.png) |
+| Quality | Colour | Update | Restart notice |
+|---|---|---|---|
+| ![Quality tab](docs/images/panel-quality-en.png) | ![Colour tab](docs/images/panel-color-en.png) | ![Update tab](docs/images/panel-update-en.png) | ![Restart needed](docs/images/panel-restart-en.png) |
 
 These are not screenshots from the device. They are mockups of the panel's HTML, with default values. The load field is where measured values appear on the device.
 
 ### Panel basics
 
-- Adjust the look on the dashboard's "BetterFrame XP" panel while you watch it. Tabs: Quality / Experimental / SteamVR settings / Update.
+- Adjust the look on the dashboard's "BetterFrame XP" panel while you watch it. Tabs: Quality / Colour / Experimental / SteamVR settings / Update.
 - Switches at the top right: "Enabled" (turns sharpening and the rest on or off), "Split compare" (draws a line down the center of each eye; the left side is passed through, the right side is processed), and "PC video only" (ON recommended; with OFF, it is applied while Frame is on its own, too).
-- The Quality tab has sharpness, center weight, and presets. The Experimental tab is split into deband, sharpening assist, and grain. Sub-settings under the vertical line have no effect when that section's amount (sharpen, deband, or grain amount) is 0.
+- The Quality tab has sharpness, center weight, and presets. The Colour tab grades the final picture (contrast / saturation / gamma / temperature / brightness, 1.0 = unchanged) after sharpening, with Neutral / Vivid / Soft / Eye care shortcuts. The Experimental tab is split into deband, sharpening assist, and grain. Sub-settings under the vertical line have no effect when that section's amount (sharpen, deband, or grain amount) is 0.
 - Only the switches on the SteamVR settings tab change the SteamVR settings on the Frame itself. Each tab's Tips explain what each switch does.
 
 ### Closing the panel and opening it again

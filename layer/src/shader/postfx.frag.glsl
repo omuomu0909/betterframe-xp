@@ -29,6 +29,11 @@ layout(set = 1, binding = 0) uniform Params
     float casCross;       // 1 = CAS reads the cross only (5 taps), 0 = full 3x3 (9 taps)
     float casLuma;        // 1 = CAS on luma (one weight for all channels), 0 = per colour channel
     float cornerSkip;     // eye radius beyond which pixels are left alone, 0 = off
+    float contrast;       // 1 = unchanged (pivot 0.5)
+    float saturation;     // 1 = unchanged, 0 = greyscale
+    float gamma;          // 1 = unchanged, > 1 brightens mid-tones
+    float temperature;    // 1 = unchanged, > 1 warmer (keeps the overall luma)
+    float brightness;     // 1 = unchanged
     highp float frameSeed;// written by the layer every frame (0..63)
 } p;
 
@@ -134,6 +139,27 @@ float grain(highp vec2 px)
     return hash12(cell) + hash12(cell + vec2(47.0, 17.0)) - 1.0;
 }
 
+// Colours are graded after the detail work: contrast around mid grey, saturation against luma,
+// gamma, white balance, then brightness. Every neutral value (1.0) makes the step an exact no-op,
+// and colorActive() lets the shader skip the two pow() calls entirely when nothing is set.
+bool colorActive()
+{
+    return p.contrast != 1.0 || p.saturation != 1.0 || p.gamma != 1.0
+        || p.temperature != 1.0 || p.brightness != 1.0;
+}
+
+vec3 grade(vec3 c)
+{
+    c = (clamp(c, 0.0, 1.0) - 0.5) * p.contrast + 0.5;
+    c = mix(vec3(dot(c, kLuma)), c, p.saturation);
+    c = pow(max(c, vec3(0.0)), vec3(1.0 / p.gamma));
+    // White balance as RGB gains normalised by their luma, so warm/cool does not change the
+    // overall brightness (otherwise the temperature slider would double as a brightness slider).
+    vec3 wb = vec3(p.temperature, 1.0, 1.0 / p.temperature);
+    c *= wb / max(dot(wb, kLuma), 1e-4);
+    return clamp(c * p.brightness, 0.0, 1.0);
+}
+
 void main()
 {
     highp vec2 uv  = textureCoord;
@@ -149,7 +175,9 @@ void main()
     if (p.showSplit > 0.5)
     {
         // A divider line in the middle of each eye: 3 px white with a 3 px black border on each side,
-        // so the boundary is visible on bright and dark scenes alike. Left of it: untouched, right: processed.
+        // so the boundary is visible on bright and dark scenes alike. Left of it: untouched source
+        // (no sharpen, no deband, no grain, no colour grade), right: everything, so the split compare
+        // shows the full difference including the colour grade.
         // One pixel is 2 * texel.x in eyeUv.x when the eyes share one image, 1 * texel.x otherwise.
         highp float pixelInEye = p.texel.x * (p.splitEyes > 0.5 ? 2.0 : 1.0);
         highp float linePx     = abs(eyeUv.x - 0.5) / pixelInEye;
@@ -175,10 +203,11 @@ void main()
     float weight = mix(1.0, p.edgeAmount, smoothstep(min(p.centerRadius, 0.95), 1.0, r));
 
     // Corners of each eye (beyond cornerSkip, e.g. the inscribed circle at 1.15): the effects are
-    // weak there and the reads are skipped. Output stays the plain source colour.
+    // weak there and the reads are skipped. The colour grade still applies (it reads nothing), so
+    // there is no visible ring where the corrected area ends.
     if (p.cornerSkip > 0.0 && r > p.cornerSkip)
     {
-        fragColor = vec4(src.rgb, src.a);
+        fragColor = vec4(colorActive() ? grade(src.rgb) : src.rgb, src.a);
         return;
     }
 
@@ -211,5 +240,9 @@ void main()
         col += vec3(grain(px) * 0.04 * p.grainAmount * tone * area * weight);
     }
 
-    fragColor = vec4(clamp(col, 0.0, 1.0), src.a);
+    col = clamp(col, 0.0, 1.0);
+    if (colorActive())
+        col = grade(col);
+
+    fragColor = vec4(col, src.a);
 }
